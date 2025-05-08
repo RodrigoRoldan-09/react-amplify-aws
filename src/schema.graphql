@@ -1,4 +1,4 @@
-type Project @model {
+type Project @model @auth(rules: [{ allow: public }]) {
   id: ID!
   name: String!
   description: String

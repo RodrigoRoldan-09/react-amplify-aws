@@ -1,9 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
+import { Amplify } from 'aws-amplify';
+import { generateClient } from 'aws-amplify/api';
+import * as mutations from './graphql/mutations';
+import * as queries from './graphql/queries';
+//import awsconfig from './aws-exports';
+import outputs from '../amplify_outputs.json';
+
+// Configura Amplify
+Amplify.configure(outputs);
+const client = generateClient();
 
 // Definimos interfaces para nuestros tipos
 interface Project {
-  id: number;
+  id: string;
   name: string;
   description: string;
   image: string;
@@ -20,69 +30,11 @@ interface NewProject {
   tags: string[];
 }
 
-// Datos de ejemplo con URLs simplificadas
-const demoProjects: Project[] = [
-  {
-    id: 1,
-    name: "AI Image Generator",
-    description: "Generate images with AI",
-    image: "https://es.unesco.org/youth/toptips/user/pages/images/home-feature-two_mobile.png",
-    githubLink: "https://github.com",
-    projectLink: "https://google.com",
-    tags: ["Generative AI", "ML"]
-  },
-  {
-    id: 2,
-    name: "Data Analytics Dashboard",
-    description: "Interactive dashboard",
-    image: "https://es.unesco.org/youth/toptips/user/pages/images/home-feature-two_mobile.png",
-    githubLink: "https://github.com",
-    projectLink: "https://google.com",
-    tags: ["Analytics"]
-  },
-  {
-    id: 3,
-    name: "AR Game Experience",
-    description: "Augmented reality gaming",
-    image: "https://es.unesco.org/youth/toptips/user/pages/images/home-feature-two_mobile.png",
-    githubLink: "https://github.com",
-    projectLink: "https://google.com",
-    tags: ["Games", "M&E"]
-  },
-  {
-    id: 4,
-    name: "ML Recommendation Engine",
-    description: "ML recommendations",
-    image: "https://es.unesco.org/youth/toptips/user/pages/images/home-feature-two_mobile.png",
-    githubLink: "https://github.com",
-    projectLink: "https://google.com",
-    tags: ["ML"]
-  },
-  {
-    id: 5,
-    name: "Video Processing App",
-    description: "Media processing",
-    image: "https://es.unesco.org/youth/toptips/user/pages/images/home-feature-two_mobile.png",
-    githubLink: "https://github.com",
-    projectLink: "https://google.com",
-    tags: ["Generative AI", "M&E"]
-  },
-  {
-    id: 6,
-    name: "Big Data Processing App",
-    description: "Data processing",
-    image: "https://es.unesco.org/youth/toptips/user/pages/images/home-feature-two_mobile.png",
-    githubLink: "https://github.com",
-    projectLink: "https://google.com",
-    tags: ["ML", "Analytics"]
-  }
-];
-
 const availableTags: string[] = ["Games", "M&E", "Analytics", "ML", "Generative AI"];
 
 const App: React.FC = () => {
-  const [projects, setProjects] = useState<Project[]>(demoProjects);
-  const [filteredProjects, setFilteredProjects] = useState<Project[]>(demoProjects);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [filteredProjects, setFilteredProjects] = useState<Project[]>([]);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -95,11 +47,58 @@ const App: React.FC = () => {
     image: '',
     tags: []
   });
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
   // Referencias para detectar clics fuera de componentes
   const sidebarRef = useRef<HTMLDivElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Cargar proyectos desde DynamoDB
+  useEffect(() => {
+    fetchProjects();
+  }, []);
+
+  // Función para obtener proyectos de DynamoDB
+  async function fetchProjects() {
+    setIsLoading(true);
+    try {
+      const projectData = await client.graphql({
+        query: queries.listProjects
+      }) as { data?: { listProjects?: { items?: Project[] } } };
+      
+      // Con type annotation 'any' para evitar errores de tipado
+      if (projectData && projectData.data && projectData.data.listProjects) {
+        const projectItems = projectData.data.listProjects.items || [];
+        setProjects(projectItems);
+        setFilteredProjects(projectItems);
+      } else {
+        console.log('No se encontraron proyectos o formato inesperado en la respuesta');
+        setProjects([]);
+        setFilteredProjects([]);
+      }
+    } catch (error) {
+      console.error('Error fetching projects:', error);
+      // Si falla, usar datos locales temporalmente
+      const demoProjects = [
+        {
+          id: "1",
+          name: "AI Image Generator",
+          description: "Generate images with AI",
+          image: "https://es.unesco.org/youth/toptips/user/pages/images/home-feature-two_mobile.png",
+          githubLink: "https://github.com",
+          projectLink: "https://google.com",
+          tags: ["Generative AI", "ML"]
+        },
+        
+        // Añade más proyectos demo si lo necesitas
+      ];
+      setProjects(demoProjects);
+      setFilteredProjects(demoProjects);
+    } finally {
+      setIsLoading(false);
+    }
+  }
 
   // Filtrado de proyectos
   useEffect(() => {
@@ -196,32 +195,47 @@ const App: React.FC = () => {
     }
   };
 
-  const handleAddProject = (e: React.FormEvent<HTMLFormElement>): void => {
+  // Añadir un proyecto a DynamoDB
+  const handleAddProject = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
     
     // Usar imagen predeterminada si no se proporciona una
     const imageUrl = newProject.image || 
       `https://via.placeholder.com/500x300/1e1e1e/ff7d00?text=${encodeURIComponent(newProject.name)}`;
     
-    const projectToAdd: Project = {
-      id: Date.now(),
-      ...newProject,
-      image: imageUrl,
-      description: "New project"
-    };
-    
-    setProjects([...projects, projectToAdd]);
-    
-    // Resetear formulario
-    setNewProject({
-      name: '',
-      githubLink: '',
-      projectLink: '',
-      image: '',
-      tags: []
-    });
-    
-    setIsAddModalOpen(false);
+    try {
+      const projectDetails = {
+        name: newProject.name,
+        description: "New project",
+        image: imageUrl,
+        githubLink: newProject.githubLink,
+        projectLink: newProject.projectLink,
+        tags: newProject.tags
+      };
+      
+      // Crear proyecto en DynamoDB
+      await client.graphql({
+        query: mutations.createProject,
+        variables: { input: projectDetails }
+      });
+      
+      // Recargar los proyectos desde DynamoDB
+      await fetchProjects();
+      
+      // Resetear formulario
+      setNewProject({
+        name: '',
+        githubLink: '',
+        projectLink: '',
+        image: '',
+        tags: []
+      });
+      
+      setIsAddModalOpen(false);
+    } catch (error) {
+      console.error('Error creating project:', error);
+      alert('Error creating project. Please try again.');
+    }
   };
 
   return (
@@ -305,40 +319,50 @@ const App: React.FC = () => {
       
       {/* Main Content */}
       <main className="main-content">
-        <div className="project-grid">
-          {filteredProjects.map(project => (
-            <div key={project.id} className="project-card">
-              <div 
-                className="project-image" 
-                style={{backgroundImage: `url(${project.image})`}}
-              >
-                <div className="project-overlay">
-                  <a 
-                    href={project.projectLink} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="project-title"
+        {isLoading ? (
+          <div className="loading">Loading projects...</div>
+        ) : (
+          <div className="project-grid">
+            {filteredProjects.length > 0 ? (
+              filteredProjects.map(project => (
+                <div key={project.id} className="project-card">
+                  <div 
+                    className="project-image" 
+                    style={{backgroundImage: `url(${project.image})`}}
                   >
-                    {project.name}
-                  </a>
-                  <a 
-                    href={project.githubLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="github-link"
-                  >
-                    <span>GitHub</span>
-                  </a>
+                    <div className="project-overlay">
+                      <a 
+                        href={project.projectLink} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="project-title"
+                      >
+                        {project.name}
+                      </a>
+                      <a 
+                        href={project.githubLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="github-link"
+                      >
+                        <span>GitHub</span>
+                      </a>
+                    </div>
+                  </div>
+                  <div className="project-tags">
+                    {project.tags && project.tags.map(tag => (
+                      <span key={tag} className="project-tag">{tag}</span>
+                    ))}
+                  </div>
                 </div>
+              ))
+            ) : (
+              <div className="no-projects">
+                <p>No projects found. Try adding a new project or changing your filters.</p>
               </div>
-              <div className="project-tags">
-                {project.tags.map(tag => (
-                  <span key={tag} className="project-tag">{tag}</span>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
+            )}
+          </div>
+        )}
       </main>
       
       {/* Modal para añadir proyecto */}
