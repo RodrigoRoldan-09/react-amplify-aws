@@ -4,12 +4,15 @@ import { Amplify } from 'aws-amplify';
 import { generateClient } from 'aws-amplify/api';
 import * as mutations from './graphql/mutations';
 import * as queries from './graphql/queries';
-//import awsconfig from './aws-exports';
 import outputs from '../amplify_outputs.json';
 
 // Configura Amplify
 Amplify.configure(outputs);
 const client = generateClient();
+
+// URL base de la API (ajustar según sea necesario)
+// Si no está en outputs, definir manualmente o usar un valor por defecto
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://your-api-endpoint.amazonaws.com';
 
 // Definimos interfaces para nuestros tipos
 interface Project {
@@ -20,6 +23,8 @@ interface Project {
   githubLink: string;
   projectLink: string;
   tags: string[];
+  category?: string; // Nueva propiedad de categoría
+  createdAt?: string; // Propiedad de fecha de creación
 }
 
 interface NewProject {
@@ -63,23 +68,97 @@ const App: React.FC = () => {
   async function fetchProjects() {
     setIsLoading(true);
     try {
-      const projectData = await client.graphql({
-        query: queries.listProjects
-      }) as { data?: { listProjects?: { items?: Project[] } } };
-      
-      // Con type annotation 'any' para evitar errores de tipado
-      if (projectData && projectData.data && projectData.data.listProjects) {
-        const projectItems = projectData.data.listProjects.items || [];
-        setProjects(projectItems);
-        setFilteredProjects(projectItems);
-      } else {
-        console.log('No se encontraron proyectos o formato inesperado en la respuesta');
-        setProjects([]);
-        setFilteredProjects([]);
+      // Intentar primero con GraphQL
+      try {
+        const projectData = await client.graphql({
+          query: queries.listProjects
+        }) as { data?: { listProjects?: { items?: Project[] } } };
+        
+        if (projectData?.data?.listProjects?.items) {
+          const projectItems = projectData.data.listProjects.items || [];
+          setProjects(projectItems);
+          setFilteredProjects(projectItems);
+          setIsLoading(false);
+          return;
+        }
+      } catch (graphqlError) {
+        console.warn('GraphQL query failed, trying REST API:', graphqlError);
       }
+
+      // Si GraphQL falla, intentar con REST API
+      try {
+        const response = await fetch(`${API_BASE_URL}/projects`);
+        
+        if (response.ok) {
+          const projectItems = await response.json();
+          setProjects(projectItems);
+          setFilteredProjects(projectItems);
+          setIsLoading(false);
+          return;
+        }
+      } catch (restError) {
+        console.warn('REST API also failed:', restError);
+      }
+
+      // Si todo falla, usar datos demo
+      console.log('No se encontraron proyectos o formato inesperado en la respuesta');
+      const demoProjects = [
+        {
+          id: "1",
+          name: "AI Image Generator",
+          description: "Generate images with AI",
+          image: "https://es.unesco.org/youth/toptips/user/pages/images/home-feature-two_mobile.png",
+          githubLink: "https://github.com",
+          projectLink: "https://google.com",
+          tags: ["Generative AI", "ML"],
+          category: "Generative AI"
+        },
+        {
+          id: "2",
+          name: "Data Analytics Dashboard",
+          description: "Interactive analytics dashboard",
+          image: "https://es.unesco.org/youth/toptips/user/pages/images/home-feature-two_mobile.png",
+          githubLink: "https://github.com",
+          projectLink: "https://google.com",
+          tags: ["Analytics"],
+          category: "Analytics"
+        },
+        {
+          id: "3",
+          name: "AR Game Experience",
+          description: "Augmented reality gaming",
+          image: "https://es.unesco.org/youth/toptips/user/pages/images/home-feature-two_mobile.png",
+          githubLink: "https://github.com",
+          projectLink: "https://google.com",
+          tags: ["Games", "M&E"],
+          category: "Games"
+        },
+        {
+          id: "4",
+          name: "ML Recommendation Engine",
+          description: "Machine learning recommendations",
+          image: "https://es.unesco.org/youth/toptips/user/pages/images/home-feature-two_mobile.png",
+          githubLink: "https://github.com",
+          projectLink: "https://google.com",
+          tags: ["ML"],
+          category: "ML"
+        },
+        {
+          id: "5",
+          name: "Video Processing App",
+          description: "Media processing application",
+          image: "https://es.unesco.org/youth/toptips/user/pages/images/home-feature-two_mobile.png",
+          githubLink: "https://github.com",
+          projectLink: "https://google.com",
+          tags: ["Generative AI", "M&E"],
+          category: "M&E"
+        }
+      ];
+      setProjects(demoProjects);
+      setFilteredProjects(demoProjects);
     } catch (error) {
       console.error('Error fetching projects:', error);
-      // Si falla, usar datos locales temporalmente
+      // Fallback a datos demo
       const demoProjects = [
         {
           id: "1",
@@ -89,9 +168,7 @@ const App: React.FC = () => {
           githubLink: "https://github.com",
           projectLink: "https://google.com",
           tags: ["Generative AI", "ML"]
-        },
-        
-        // Añade más proyectos demo si lo necesitas
+        }
       ];
       setProjects(demoProjects);
       setFilteredProjects(demoProjects);
@@ -195,13 +272,16 @@ const App: React.FC = () => {
     }
   };
 
-  // Añadir un proyecto a DynamoDB
+  // Añadir un proyecto
   const handleAddProject = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
     
     // Usar imagen predeterminada si no se proporciona una
     const imageUrl = newProject.image || 
       `https://via.placeholder.com/500x300/1e1e1e/ff7d00?text=${encodeURIComponent(newProject.name)}`;
+    
+    // Determinar la categoría principal basada en la primera etiqueta
+    const category = newProject.tags.length > 0 ? newProject.tags[0] : "Other";
     
     try {
       const projectDetails = {
@@ -210,16 +290,35 @@ const App: React.FC = () => {
         image: imageUrl,
         githubLink: newProject.githubLink,
         projectLink: newProject.projectLink,
-        tags: newProject.tags
+        tags: newProject.tags,
+        category: category, // Añadir categoría principal
+        createdAt: new Date().toISOString() // Añadir timestamp
       };
       
-      // Crear proyecto en DynamoDB
-      await client.graphql({
-        query: mutations.createProject,
-        variables: { input: projectDetails }
-      });
+      // Intentar crear primero con GraphQL
+      try {
+        await client.graphql({
+          query: mutations.createProject,
+          variables: { input: projectDetails }
+        });
+      } catch (graphqlError) {
+        console.warn('GraphQL mutation failed, trying REST API:', graphqlError);
+        
+        // Si GraphQL falla, intentar con REST API
+        const response = await fetch(`${API_BASE_URL}/projects`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(projectDetails)
+        });
+        
+        if (!response.ok) {
+          throw new Error('Error creating project via REST API');
+        }
+      }
       
-      // Recargar los proyectos desde DynamoDB
+      // Recargar los proyectos
       await fetchProjects();
       
       // Resetear formulario
@@ -425,7 +524,7 @@ const App: React.FC = () => {
               </div>
               
               <div className="form-group">
-                <label>Tags *</label>
+                <label>Tags * <small>(First tag will be used as main category)</small></label>
                 <div className="tag-container">
                   {availableTags.map(tag => (
                     <button
