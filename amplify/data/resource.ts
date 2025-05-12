@@ -1,22 +1,23 @@
 import { type ClientSchema, a, defineData } from "@aws-amplify/backend";
 
-/*
- * Define el esquema para la tabla de proyectos
- */
+// Definición del schema para la tabla de proyectos
 const schema = a.schema({
   Project: a
     .model({
-      name: a.string(),
+      name: a.string().required(),
       description: a.string(),
       image: a.string(),
-      githubLink: a.string(),
-      projectLink: a.string(),
-      // Para versiones que no soportan a.array, usamos string directamente
-      tags: a.string(), // Almacenaremos los tags como string JSON
-      category: a.string().required(), // Categoría principal
+      githubLink: a.string().required(),
+      projectLink: a.string().required(),
+      // Para tags, usamos un formato que pueda almacenarse en DynamoDB
+      // Como string que podemos parsear como JSON
+      tags: a.string(),
+      // Añadimos categoría para filtrar
+      category: a.string(),
+      // Campo para ordenamiento
+      createdAt: a.string(),
     })
-    .authorization((allow) => [allow.publicApiKey()])
-    // No podemos usar .index directamente en esta versión
+    .authorization((allow) => [allow.publicApiKey()]),
 });
 
 export type Schema = ClientSchema<typeof schema>;

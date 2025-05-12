@@ -1,9 +1,0 @@
-type Project @model @auth(rules: [{ allow: public }]) {
-  id: ID!
-  name: String!
-  description: String
-  image: String
-  githubLink: String!
-  projectLink: String!
-  tags: [String]
-}
