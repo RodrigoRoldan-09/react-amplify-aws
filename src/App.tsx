@@ -1,18 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
-import { Amplify } from 'aws-amplify';
-import { generateClient } from 'aws-amplify/api';
-import * as mutations from './graphql/mutations';
-import * as queries from './graphql/queries';
-import outputs from '../amplify_outputs.json';
 
-// Configura Amplify
-Amplify.configure(outputs);
-const client = generateClient();
-
-// URL base de la API (ajustar según sea necesario)
-// Si no está en outputs, definir manualmente o usar un valor por defecto
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://your-api-endpoint.amazonaws.com';
+// URL del API Gateway (reemplazar con tu URL real)
+const API_URL = 'https://your-api-gateway-url.execute-api.us-east-1.amazonaws.com/prod';
 
 // Definimos interfaces para nuestros tipos
 interface Project {
@@ -23,8 +13,6 @@ interface Project {
   githubLink: string;
   projectLink: string;
   tags: string[];
-  category?: string; // Nueva propiedad de categoría
-  createdAt?: string; // Propiedad de fecha de creación
 }
 
 interface NewProject {
@@ -34,6 +22,64 @@ interface NewProject {
   image: string;
   tags: string[];
 }
+
+// Datos de ejemplo con URLs simplificadas (usados como fallback si la API falla)
+const demoProjects: Project[] = [
+  {
+    id: "1",
+    name: "AI Image Generator",
+    description: "Generate images with AI",
+    image: "https://es.unesco.org/youth/toptips/user/pages/images/home-feature-two_mobile.png",
+    githubLink: "https://github.com",
+    projectLink: "https://google.com",
+    tags: ["Generative AI", "ML"]
+  },
+  {
+    id: "2",
+    name: "Data Analytics Dashboard",
+    description: "Interactive dashboard",
+    image: "https://es.unesco.org/youth/toptips/user/pages/images/home-feature-two_mobile.png",
+    githubLink: "https://github.com",
+    projectLink: "https://google.com",
+    tags: ["Analytics"]
+  },
+  {
+    id: "3",
+    name: "AR Game Experience",
+    description: "Augmented reality gaming",
+    image: "https://es.unesco.org/youth/toptips/user/pages/images/home-feature-two_mobile.png",
+    githubLink: "https://github.com",
+    projectLink: "https://google.com",
+    tags: ["Games", "M&E"]
+  },
+  {
+    id: "4",
+    name: "ML Recommendation Engine",
+    description: "ML recommendations",
+    image: "https://es.unesco.org/youth/toptips/user/pages/images/home-feature-two_mobile.png",
+    githubLink: "https://github.com",
+    projectLink: "https://google.com",
+    tags: ["ML"]
+  },
+  {
+    id: "5",
+    name: "Video Processing App",
+    description: "Media processing",
+    image: "https://es.unesco.org/youth/toptips/user/pages/images/home-feature-two_mobile.png",
+    githubLink: "https://github.com",
+    projectLink: "https://google.com",
+    tags: ["Generative AI", "M&E"]
+  },
+  {
+    id: "6",
+    name: "Big Data Processing App",
+    description: "Data processing",
+    image: "https://es.unesco.org/youth/toptips/user/pages/images/home-feature-two_mobile.png",
+    githubLink: "https://github.com",
+    projectLink: "https://google.com",
+    tags: ["ML", "Analytics"]
+  }
+];
 
 const availableTags: string[] = ["Games", "M&E", "Analytics", "ML", "Generative AI"];
 
@@ -59,117 +105,30 @@ const App: React.FC = () => {
   const modalRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Cargar proyectos desde DynamoDB
+  // Cargar proyectos desde la API cuando el componente se monta
   useEffect(() => {
     fetchProjects();
   }, []);
 
-  // Función para obtener proyectos de DynamoDB
+  // Función para obtener proyectos de la API
   async function fetchProjects() {
     setIsLoading(true);
     try {
-      // Intentar primero con GraphQL
-      try {
-        const projectData = await client.graphql({
-          query: queries.listProjects
-        }) as { data?: { listProjects?: { items?: Project[] } } };
-        
-        if (projectData?.data?.listProjects?.items) {
-          const projectItems = projectData.data.listProjects.items || [];
-          setProjects(projectItems);
-          setFilteredProjects(projectItems);
-          setIsLoading(false);
-          return;
-        }
-      } catch (graphqlError) {
-        console.warn('GraphQL query failed, trying REST API:', graphqlError);
+      const response = await fetch(`${API_URL}/projects`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        setProjects(data);
+        setFilteredProjects(data);
+      } else {
+        console.error('Error fetching projects from API:', response.statusText);
+        // Usar datos de demostración como respaldo
+        setProjects(demoProjects);
+        setFilteredProjects(demoProjects);
       }
-
-      // Si GraphQL falla, intentar con REST API
-      try {
-        const response = await fetch(`${API_BASE_URL}/projects`);
-        
-        if (response.ok) {
-          const projectItems = await response.json();
-          setProjects(projectItems);
-          setFilteredProjects(projectItems);
-          setIsLoading(false);
-          return;
-        }
-      } catch (restError) {
-        console.warn('REST API also failed:', restError);
-      }
-
-      // Si todo falla, usar datos demo
-      console.log('No se encontraron proyectos o formato inesperado en la respuesta');
-      const demoProjects = [
-        {
-          id: "1",
-          name: "AI Image Generator",
-          description: "Generate images with AI",
-          image: "https://es.unesco.org/youth/toptips/user/pages/images/home-feature-two_mobile.png",
-          githubLink: "https://github.com",
-          projectLink: "https://google.com",
-          tags: ["Generative AI", "ML"],
-          category: "Generative AI"
-        },
-        {
-          id: "2",
-          name: "Data Analytics Dashboard",
-          description: "Interactive analytics dashboard",
-          image: "https://es.unesco.org/youth/toptips/user/pages/images/home-feature-two_mobile.png",
-          githubLink: "https://github.com",
-          projectLink: "https://google.com",
-          tags: ["Analytics"],
-          category: "Analytics"
-        },
-        {
-          id: "3",
-          name: "AR Game Experience",
-          description: "Augmented reality gaming",
-          image: "https://es.unesco.org/youth/toptips/user/pages/images/home-feature-two_mobile.png",
-          githubLink: "https://github.com",
-          projectLink: "https://google.com",
-          tags: ["Games", "M&E"],
-          category: "Games"
-        },
-        {
-          id: "4",
-          name: "ML Recommendation Engine",
-          description: "Machine learning recommendations",
-          image: "https://es.unesco.org/youth/toptips/user/pages/images/home-feature-two_mobile.png",
-          githubLink: "https://github.com",
-          projectLink: "https://google.com",
-          tags: ["ML"],
-          category: "ML"
-        },
-        {
-          id: "5",
-          name: "Video Processing App",
-          description: "Media processing application",
-          image: "https://es.unesco.org/youth/toptips/user/pages/images/home-feature-two_mobile.png",
-          githubLink: "https://github.com",
-          projectLink: "https://google.com",
-          tags: ["Generative AI", "M&E"],
-          category: "M&E"
-        }
-      ];
-      setProjects(demoProjects);
-      setFilteredProjects(demoProjects);
     } catch (error) {
       console.error('Error fetching projects:', error);
-      // Fallback a datos demo
-      const demoProjects = [
-        {
-          id: "1",
-          name: "AI Image Generator",
-          description: "Generate images with AI",
-          image: "https://es.unesco.org/youth/toptips/user/pages/images/home-feature-two_mobile.png",
-          githubLink: "https://github.com",
-          projectLink: "https://google.com",
-          tags: ["Generative AI", "ML"]
-        }
-      ];
+      // Usar datos de demostración como respaldo en caso de error
       setProjects(demoProjects);
       setFilteredProjects(demoProjects);
     } finally {
@@ -272,7 +231,7 @@ const App: React.FC = () => {
     }
   };
 
-  // Añadir un proyecto
+  // Función para añadir un nuevo proyecto mediante la API
   const handleAddProject = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
     
@@ -280,61 +239,61 @@ const App: React.FC = () => {
     const imageUrl = newProject.image || 
       `https://via.placeholder.com/500x300/1e1e1e/ff7d00?text=${encodeURIComponent(newProject.name)}`;
     
-    // Determinar la categoría principal basada en la primera etiqueta
-    const category = newProject.tags.length > 0 ? newProject.tags[0] : "Other";
+    const projectToAdd = {
+      name: newProject.name,
+      description: "New project",
+      image: imageUrl,
+      githubLink: newProject.githubLink,
+      projectLink: newProject.projectLink,
+      tags: newProject.tags
+    };
     
     try {
-      const projectDetails = {
-        name: newProject.name,
-        description: "New project",
-        image: imageUrl,
-        githubLink: newProject.githubLink,
-        projectLink: newProject.projectLink,
-        tags: newProject.tags,
-        category: category, // Añadir categoría principal
-        createdAt: new Date().toISOString() // Añadir timestamp
-      };
-      
-      // Intentar crear primero con GraphQL
-      try {
-        await client.graphql({
-          query: mutations.createProject,
-          variables: { input: projectDetails }
-        });
-      } catch (graphqlError) {
-        console.warn('GraphQL mutation failed, trying REST API:', graphqlError);
-        
-        // Si GraphQL falla, intentar con REST API
-        const response = await fetch(`${API_BASE_URL}/projects`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(projectDetails)
-        });
-        
-        if (!response.ok) {
-          throw new Error('Error creating project via REST API');
-        }
-      }
-      
-      // Recargar los proyectos
-      await fetchProjects();
-      
-      // Resetear formulario
-      setNewProject({
-        name: '',
-        githubLink: '',
-        projectLink: '',
-        image: '',
-        tags: []
+      // Hacer POST a la API para crear un nuevo proyecto
+      const response = await fetch(`${API_URL}/projects`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(projectToAdd),
       });
       
-      setIsAddModalOpen(false);
+      if (response.ok) {
+        // Si la respuesta es exitosa, recargar los proyectos
+        await fetchProjects();
+      } else {
+        console.error('Error creating project:', response.statusText);
+        alert(`Error creating project: ${response.statusText}`);
+        
+        // Fallback: añadir localmente si la API falla
+        const localProjectToAdd: Project = {
+          id: Date.now().toString(),
+          ...projectToAdd
+        };
+        setProjects([...projects, localProjectToAdd]);
+      }
     } catch (error) {
       console.error('Error creating project:', error);
       alert('Error creating project. Please try again.');
+      
+      // Fallback: añadir localmente si la API falla
+      const localProjectToAdd: Project = {
+        id: Date.now().toString(),
+        ...projectToAdd
+      };
+      setProjects([...projects, localProjectToAdd]);
     }
+    
+    // Resetear formulario
+    setNewProject({
+      name: '',
+      githubLink: '',
+      projectLink: '',
+      image: '',
+      tags: []
+    });
+    
+    setIsAddModalOpen(false);
   };
 
   return (
@@ -449,7 +408,7 @@ const App: React.FC = () => {
                     </div>
                   </div>
                   <div className="project-tags">
-                    {project.tags && project.tags.map(tag => (
+                    {project.tags.map(tag => (
                       <span key={tag} className="project-tag">{tag}</span>
                     ))}
                   </div>
@@ -524,7 +483,7 @@ const App: React.FC = () => {
               </div>
               
               <div className="form-group">
-                <label>Tags * <small>(First tag will be used as main category)</small></label>
+                <label>Tags *</label>
                 <div className="tag-container">
                   {availableTags.map(tag => (
                     <button
